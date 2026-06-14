@@ -45,9 +45,8 @@ static LPCWSTR GetWeaselRegName() {
 }
 
 static bool open(const std::wstring& path) {
-  std::wstring quoted_path = L"\"" + path + L"\"";
-  return (uintptr_t)ShellExecuteW(NULL, L"open", quoted_path.c_str(), NULL,
-                                  NULL, SW_SHOWNORMAL) > 32;
+  return (uintptr_t)ShellExecuteW(NULL, L"open", path.c_str(), NULL, NULL,
+                                  SW_SHOWNORMAL) > 32;
 }
 
 CLangBarItemButton::CLangBarItemButton(com_ptr<WeaselTSF> pTextService,
