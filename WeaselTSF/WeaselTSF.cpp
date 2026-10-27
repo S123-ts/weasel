@@ -262,14 +262,27 @@ bool WeaselTSF::_EnsureServerConnected() {
       if (!m_client.Echo() && GetLastError() != ERROR_ALREADY_EXISTS &&
           !count_server_process()) {
         std::wstring dir = _GetRootDir();
-        std::thread th([dir, this]() {
-          ShellExecuteW(NULL, L"open", (dir + L"\\start_service.bat").c_str(),
-                        NULL, dir.c_str(), SW_HIDE);
-          // wait 500ms, then reconnect
-          std::this_thread::sleep_for(std::chrono::milliseconds(500));
-          _Reconnect();
-        });
-        th.detach();
+        // Hold a reference for the detached thread: _Reconnect() touches
+        // members (m_client, _cand) that would dangle if the host application
+        // releases this instance while the service start is still in flight.
+        this->AddRef();
+        try {
+          std::thread th([dir, this]() {
+            ShellExecuteW(NULL, L"open", (dir + L"\\start_service.bat").c_str(),
+                          NULL, dir.c_str(), SW_HIDE);
+            // wait 500ms, then reconnect
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            try {
+              _Reconnect();
+            } catch (...) {
+            }
+            this->Release();
+          });
+          th.detach();
+        } catch (...) {
+          // thread creation failed: no service start this time, keep typing
+          this->Release();
+        }
       }
       if (hMutex) {
         CloseHandle(hMutex);

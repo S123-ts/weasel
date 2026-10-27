@@ -66,5 +66,5 @@ STDMETHODIMP WeaselTSF::DoEditSession(TfEditCookie ec) {
     _UpdateUI(*context, _status);
   }
 
-  return TRUE;
+  return S_OK;
 }

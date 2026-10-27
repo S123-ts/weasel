@@ -181,7 +181,7 @@ HRESULT WeaselTSF::_GetCompartmentDWORD(DWORD& value, const GUID guid) {
   HRESULT hr = E_FAIL;
   com_ptr<ITfCompartmentMgr> pComMgr;
   if (_pThreadMgr->QueryInterface(&pComMgr) == S_OK) {
-    ITfCompartment* pCompartment;
+    ITfCompartment* pCompartment = nullptr;
     if (pComMgr->GetCompartment(guid, &pCompartment) == S_OK) {
       VARIANT var;
       if (pCompartment->GetValue(&var) == S_OK) {
@@ -191,7 +191,8 @@ HRESULT WeaselTSF::_GetCompartmentDWORD(DWORD& value, const GUID guid) {
           hr = S_FALSE;
       }
     }
-    pCompartment->Release();
+    if (pCompartment)
+      pCompartment->Release();
   }
   return hr;
 }
@@ -200,14 +201,15 @@ HRESULT WeaselTSF::_SetCompartmentDWORD(const DWORD& value, const GUID guid) {
   HRESULT hr = S_OK;
   com_ptr<ITfCompartmentMgr> pComMgr;
   if (_pThreadMgr->QueryInterface(&pComMgr) == S_OK) {
-    ITfCompartment* pCompartment;
+    ITfCompartment* pCompartment = nullptr;
     if (pComMgr->GetCompartment(guid, &pCompartment) == S_OK) {
       VARIANT var;
       var.vt = VT_I4;
       var.lVal = value;
       hr = pCompartment->SetValue(_tfClientId, &var);
     }
-    pCompartment->Release();
+    if (pCompartment)
+      pCompartment->Release();
   }
   return hr;
 }
