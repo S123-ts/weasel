@@ -112,6 +112,13 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   std::map<std::string, bool> m_show_notifications_base;
   std::function<void()> _UpdateUICallback;
 
+  // Status fetched by _Respond, reused by the immediately following _GetStatus
+  // to avoid a second librime query per keystroke. Owned: freed on release.
+  RimeStatus m_respond_status = {};
+  RimeSessionId m_respond_status_session = 0;
+  bool m_respond_status_valid = false;
+  void _ReleaseRespondStatus();
+
   static void OnNotify(void* context_object,
                        uintptr_t session_id,
                        const char* message_type,

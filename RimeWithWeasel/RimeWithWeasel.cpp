@@ -151,6 +151,7 @@ void RimeWithWeaselHandler::Initialize() {
 void RimeWithWeaselHandler::Finalize() {
   m_active_session = 0;
   m_disabled = true;
+  _ReleaseRespondStatus();
   m_session_status_map.clear();
   LOG(INFO) << "Finalizing la rime.";
   rime_api->finalize();
@@ -273,6 +274,7 @@ BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,
   RimeSessionId session_id = to_session_id(ipc_id);
   Bool handled = rime_api->process_key(session_id, keyEvent.keycode,
                                        expand_ibus_modifier(keyEvent.mask));
+  bool state_changed = false;
   // vim_mode when keydown only
   if (!handled && !(keyEvent.mask & ibus::Modifier::RELEASE_MASK)) {
     bool isVimBackInCommandMode =
@@ -285,7 +287,22 @@ BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,
         rime_api->get_option(session_id, "vim_mode") &&
         !rime_api->get_option(session_id, "ascii_mode")) {
       rime_api->set_option(session_id, "ascii_mode", True);
+      state_changed = true;
     }
+  }
+  bool has_notification = false;
+  {
+    std::lock_guard<std::mutex> lock(m_notifier_mutex);
+    has_notification = !m_message_type.empty();
+  }
+  // An unconsumed key normally leaves the engine state untouched: answer with
+  // a minimal noop instead of the full status/context fetch and candidate
+  // serialization. Anything that did change state (vim_mode above, a pending
+  // notification) takes the full path below.
+  if (!handled && !state_changed && !has_notification) {
+    eat(L"action=noop\n.\n");
+    m_active_session = ipc_id;
+    return (BOOL)handled;
   }
   _Respond(ipc_id, eat);
   _UpdateUI(ipc_id);
@@ -791,7 +808,12 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
       }
     }
     session_status.status = status;
-    rime_api->free_status(&status);
+    // Hand ownership to the stash: the _UpdateUI right after this call reuses
+    // the status instead of querying librime a second time.
+    _ReleaseRespondStatus();
+    m_respond_status = status;
+    m_respond_status_session = session_id;
+    m_respond_status_valid = true;
   }
 
   RIME_STRUCT(RimeContext, ctx);
@@ -1436,7 +1458,17 @@ void RimeWithWeaselHandler::_GetStatus(Status& stat,
   SessionStatus& session_status = get_session_status(ipc_id);
   RimeSessionId session_id = session_status.session_id;
   RIME_STRUCT(RimeStatus, status);
-  if (rime_api->get_status(session_id, &status)) {
+  // Reuse the status stashed by _Respond within the same message handling;
+  // only fall back to a fresh librime query when there is none.
+  bool stashed =
+      m_respond_status_valid && m_respond_status_session == session_id;
+  if (stashed) {
+    status = m_respond_status;
+    m_respond_status_valid = false;
+  } else if (!rime_api->get_status(session_id, &status)) {
+    return;
+  }
+  {
     std::string schema_id = "";
     if (status.schema_id)
       schema_id = status.schema_id;
@@ -1467,7 +1499,17 @@ void RimeWithWeaselHandler::_GetStatus(Status& stat,
         }
       }
     }
-    rime_api->free_status(&status);
+    if (stashed)
+      _ReleaseRespondStatus();
+    else
+      rime_api->free_status(&status);
+  }
+}
+
+void RimeWithWeaselHandler::_ReleaseRespondStatus() {
+  if (m_respond_status_valid) {
+    rime_api->free_status(&m_respond_status);
+    m_respond_status_valid = false;
   }
 }
 
