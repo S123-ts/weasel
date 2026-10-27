@@ -1181,55 +1181,65 @@ LRESULT WeaselPanel::MsgHandler(HWND hwnd,
                                 UINT uMsg,
                                 WPARAM wParam,
                                 LPARAM lParam) {
-  switch (uMsg) {
-    case WM_PAINT:
-      DoPaint();
-      break;
-    case WM_DESTROY:
-      OnDestroy();
-      return 0;
-    case WM_NCDESTROY:
-      SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
-      return DefWindowProc(hwnd, uMsg, wParam, lParam);
-    case WM_MOUSEMOVE:
-      OnMouseMove(uMsg, wParam, lParam);
-      break;
-    case WM_MOUSEACTIVATE:
-      return OnMouseActive(uMsg, wParam, lParam);
-    case WM_MOUSEWHEEL:
-      return OnScroll(uMsg, wParam, lParam);
-    case WM_LBUTTONUP:
-      return OnLeftClickUp(uMsg, wParam, lParam);
-    case WM_LBUTTONDOWN:
-      return OnLeftClickDown(uMsg, wParam, lParam);
-    case WM_DPICHANGED:
-      if (lParam) {
-        const auto* rc = reinterpret_cast<const RECT*>(lParam);
-        ::SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
-                       rc->bottom - rc->top,
-                       SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW);
-      }
-      if (m_pD2D) {
-        m_pD2D->InitDpiInfo();
-        if (!m_style.font_face.empty())
-          m_pD2D->InitDirectWriteResources();
-      }
-      Refresh();
-      return 0;
-    case WM_TIMER:
-      if (wParam == AUTOREV_TIMER) {
-        ::KillTimer(m_hWnd, AUTOREV_TIMER);
-        m_clickTimer = 0;
-        m_bar_scale = 1.0f;
-        InvalidateRect(m_hWnd, nullptr, TRUE);
+  // HR() throws ComException on D2D/DWrite failures; an exception escaping
+  // the window procedure would crash the host process. Contain it here and
+  // let the next paint rebuild the device resources.
+  try {
+    switch (uMsg) {
+      case WM_PAINT:
+        DoPaint();
+        break;
+      case WM_DESTROY:
+        OnDestroy();
         return 0;
-      } else if (wParam == AUTOHIDE_TIMER) {
-        ::KillTimer(m_hWnd, AUTOHIDE_TIMER);
-        m_autoHideTimer = 0;
-        // hide the panel on auto-hide
-        ShowWindow(SW_HIDE);
+      case WM_NCDESTROY:
+        SetWindowLongPtr(hwnd, GWLP_USERDATA, 0);
+        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+      case WM_MOUSEMOVE:
+        OnMouseMove(uMsg, wParam, lParam);
+        break;
+      case WM_MOUSEACTIVATE:
+        return OnMouseActive(uMsg, wParam, lParam);
+      case WM_MOUSEWHEEL:
+        return OnScroll(uMsg, wParam, lParam);
+      case WM_LBUTTONUP:
+        return OnLeftClickUp(uMsg, wParam, lParam);
+      case WM_LBUTTONDOWN:
+        return OnLeftClickDown(uMsg, wParam, lParam);
+      case WM_DPICHANGED:
+        if (lParam) {
+          const auto* rc = reinterpret_cast<const RECT*>(lParam);
+          ::SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
+                         rc->bottom - rc->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREDRAW);
+        }
+        if (m_pD2D) {
+          m_pD2D->InitDpiInfo();
+          if (!m_style.font_face.empty())
+            m_pD2D->InitDirectWriteResources();
+        }
+        Refresh();
         return 0;
-      }
+      case WM_TIMER:
+        if (wParam == AUTOREV_TIMER) {
+          ::KillTimer(m_hWnd, AUTOREV_TIMER);
+          m_clickTimer = 0;
+          m_bar_scale = 1.0f;
+          InvalidateRect(m_hWnd, nullptr, TRUE);
+          return 0;
+        } else if (wParam == AUTOHIDE_TIMER) {
+          ::KillTimer(m_hWnd, AUTOHIDE_TIMER);
+          m_autoHideTimer = 0;
+          // hide the panel on auto-hide
+          ShowWindow(SW_HIDE);
+          return 0;
+        }
+    }
+  } catch (const ComException& e) {
+    DEBUG << "WeaselPanel handler error: " << HRESULTToString(e.result);
+    DeviceResources::Get().Reset();
+  } catch (...) {
+    DEBUG << "WeaselPanel handler unknown error";
   }
   return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
