@@ -62,10 +62,7 @@ if is_arch("x86") then
   includes("WeaselSetup")
 end
 
-if is_mode("debug") then
-  includes("test/TestWeaselIPC")
-  includes("test/TestResponseParser")
-else
+if not is_mode("debug") then
   add_cxflags("/GL")
   add_ldflags("/LTCG /INCREMENTAL:NO", {force = true})
 end
