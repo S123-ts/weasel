@@ -101,14 +101,19 @@ inline std::string wstring_to_string(const std::wstring& wstr,
 }
 
 inline BOOL is_wow64() {
-  DWORD errorCode;
-  if (GetSystemWow64DirectoryW(NULL, 0) == 0)
-    if ((errorCode = GetLastError()) == ERROR_CALL_NOT_IMPLEMENTED)
-      return FALSE;
-    else
-      ExitProcess((UINT)errorCode);
-  else
+  if (GetSystemWow64DirectoryW(NULL, 0) != 0)
     return TRUE;
+  const DWORD errorCode = GetLastError();
+  if (errorCode != ERROR_CALL_NOT_IMPLEMENTED) {
+    // This DLL runs inside host application processes (TSF/UI); terminating
+    // the process on an unexpected error here would kill the host. Treat the
+    // failure as "not WOW64" and let callers proceed.
+    OutputDebugStringW((std::wstring(L"is_wow64: GetSystemWow64DirectoryW "
+                                     L"failed, error ") +
+                        std::to_wstring(errorCode))
+                           .c_str());
+  }
+  return FALSE;
 }
 
 template <typename CharT>
@@ -361,7 +366,7 @@ struct ComException {
 #define HR(result) HR_Impl(result, __FILE__, __LINE__)
 
 inline void HR_Impl(HRESULT const result, const char* file, int line) {
-  if (S_OK != result) {
+  if (FAILED(result)) {
     DebugStream() << "[" << current_time() << " " << file << ":" << line << "] "
                   << HRESULTToString(result);
     throw ComException(result);
